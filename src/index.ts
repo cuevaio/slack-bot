@@ -1,6 +1,7 @@
 import { Client as QstashClient } from "@upstash/qstash";
 import { generateText } from "ai";
 import { Hono } from "hono";
+import { env } from "hono/adapter";
 
 import type {
   SlackAppMentionEvent,
@@ -27,16 +28,18 @@ app.get("/", (c) => {
  * - App mentions in channels
  */
 app.post("/custom-bot/events", async (c) => {
+  const { SLACK_SIGNING_SECRET, SLACK_BOT_TOKEN, BASE_URL } = env<{
+    SLACK_SIGNING_SECRET: string;
+    SLACK_BOT_TOKEN: string;
+    BASE_URL: string;
+  }>(c);
   console.log("Received Slack webhook event");
 
   // Parse the incoming request body
   const json = await c.req.json();
   console.log("Received body:", JSON.stringify(json, null, 2));
 
-  // Load required environment variables
-  const signingSecret = process.env.SLACK_SIGNING_SECRET;
-
-  if (!signingSecret || process.env.SLACK_BOT_TOKEN) {
+  if (!SLACK_SIGNING_SECRET || !SLACK_BOT_TOKEN) {
     console.error("Missing required environment variables");
     return c.json({ error: "Missing env vars" }, 500);
   }
@@ -55,7 +58,11 @@ app.post("/custom-bot/events", async (c) => {
 
   // === Security Verification ===
   // Verify request signature for all other events
-  const valid = await verifySlackRequest(c.req.raw, rawBody, signingSecret);
+  const valid = await verifySlackRequest(
+    c.req.raw,
+    rawBody,
+    SLACK_SIGNING_SECRET
+  );
   if (!valid) {
     console.error("Invalid Slack signature - rejecting request");
     return c.json({ error: "Invalid signature" }, 401);
@@ -117,7 +124,7 @@ app.post("/custom-bot/events", async (c) => {
     );
 
     await qstash.publish({
-      url: `${process.env.BASE_URL}/api/process-message`,
+      url: `${BASE_URL}/api/process-message`,
       headers: {
         "Content-Type": "application/json",
       },
@@ -158,7 +165,7 @@ app.post("/custom-bot/events", async (c) => {
 
     // Generate AI response for app mentions
     await qstash.publish({
-      url: `${process.env.BASE_URL}/api/process-message`,
+      url: `${BASE_URL}/api/process-message`,
       headers: {
         "Content-Type": "application/json",
       },
@@ -176,6 +183,9 @@ app.post("/custom-bot/events", async (c) => {
 
 app.post("/api/process-message", async (c) => {
   try {
+    const { SLACK_BOT_TOKEN } = env<{
+      SLACK_BOT_TOKEN: string;
+    }>(c);
     const event = (await c.req.json()) as SlackMessageEvent;
     // Generate AI response
     console.log(`Generating AI response for prompt: "${event.text}"`);
@@ -191,7 +201,7 @@ app.post("/api/process-message", async (c) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
       },
       body: JSON.stringify({
         channel: event.channel,
