@@ -202,13 +202,17 @@ app.post("/api/process-message", async (c) => {
     const result = await response.json();
     if (!result.ok) {
       console.error("Failed to send message to Slack:", result.error);
-      return;
+      return c.json({ error: "Failed to send message to Slack" }, 500);
     }
 
     // Mark event as processed only after successful response
     console.log(`Successfully processed and responded to event`);
+
+    return c.json({ ok: true });
   } catch (error) {
     console.error(`Error processing message with AI for event:`, error);
+
+    return c.json({ error: "Error processing message with AI" }, 500);
   }
 });
 
