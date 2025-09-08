@@ -1,7 +1,6 @@
 import { generateText } from "ai";
 import { Hono } from "hono";
 import { verifySlackRequest } from "./lib/verify-slack-request.js";
-import { redis } from "./lib/redis.js";
 import type {
   SlackAppMentionEvent,
   SlackMessageEvent,
@@ -9,6 +8,10 @@ import type {
   SlackWebhookPayload,
 } from "./lib/types.js";
 const app = new Hono();
+
+import { Client as QstashClient } from "@upstash/qstash";
+
+const qstash = new QstashClient();
 
 // --- Hello World endpoint ---
 app.get("/", (c) => {
@@ -31,9 +34,8 @@ app.post("/custom-bot/events", async (c) => {
 
   // Load required environment variables
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  const botToken = process.env.SLACK_BOT_TOKEN;
 
-  if (!signingSecret || !botToken) {
+  if (!signingSecret || process.env.SLACK_BOT_TOKEN) {
     console.error("Missing required environment variables");
     return c.json({ error: "Missing env vars" }, 500);
   }
@@ -66,19 +68,6 @@ app.post("/custom-bot/events", async (c) => {
         (body as SlackUrlVerification).type
       }`
     );
-    return c.json({ ok: true });
-  }
-
-  // === Duplicate Event Prevention ===
-  // Check if we've already processed this event to prevent duplicates
-  const eventId = body.event_id;
-  const eventAlreadyProcessed = await redis.sismember(
-    "processed_events",
-    eventId
-  );
-
-  if (eventAlreadyProcessed) {
-    console.log(`Event ${eventId} already processed - skipping`);
     return c.json({ ok: true });
   }
 
@@ -126,8 +115,13 @@ app.post("/custom-bot/events", async (c) => {
       `Processing IM message from user ${messageEvent.user}: "${messageEvent.text}"`
     );
 
-    // Generate AI response for IM messages
-    await processMessageWithAI(messageEvent, eventId, botToken);
+    await qstash.publish({
+      url: `${process.env.BASE_URL}/api/process-message`,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(messageEvent),
+    });
   }
 
   // === App Mention Handling ===
@@ -138,7 +132,7 @@ app.post("/custom-bot/events", async (c) => {
     console.log("App mention received:", {
       user: mentionEvent.user,
       channel: mentionEvent.channel,
-      text: mentionEvent.text?.substring(0, 100) + "...",
+      text: `${mentionEvent.text?.substring(0, 100)}...`,
     });
 
     // Extract the message text without the bot mention
@@ -162,11 +156,13 @@ app.post("/custom-bot/events", async (c) => {
     );
 
     // Generate AI response for app mentions
-    await processMessageWithAI(
-      { ...mentionEvent, text: cleanText },
-      eventId,
-      botToken
-    );
+    await qstash.publish({
+      url: `${process.env.BASE_URL}/api/process-message`,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ...mentionEvent, text: cleanText }),
+    });
   }
 
   // === Unsupported Event Types ===
@@ -177,29 +173,9 @@ app.post("/custom-bot/events", async (c) => {
   return c.json({ ok: true });
 });
 
-/**
- * Process a message with AI and send the response back to Slack
- * Handles both IM messages and app mentions
- */
-async function processMessageWithAI(
-  event: SlackMessageEvent | SlackAppMentionEvent,
-  eventId: string,
-  botToken: string
-): Promise<void> {
+app.post("/api/process-message", async (c) => {
   try {
-    // Double-check for duplicate processing before expensive AI call
-    const eventAlreadyProcessed = await redis.sismember(
-      "processed_events",
-      eventId
-    );
-
-    if (eventAlreadyProcessed) {
-      console.log(
-        `Event ${eventId} already processed during AI processing - skipping`
-      );
-      return;
-    }
-
+    const event = (await c.req.json()) as SlackMessageEvent;
     // Generate AI response
     console.log(`Generating AI response for prompt: "${event.text}"`);
     const { text } = await generateText({
@@ -208,26 +184,13 @@ async function processMessageWithAI(
       prompt: `Write a poem about the following prompt: ${event.text}`,
     });
 
-    // Triple-check for duplicate processing before sending response twice
-    const eventAlreadyProcessed2 = await redis.sismember(
-      "processed_events",
-      eventId
-    );
-
-    if (eventAlreadyProcessed2) {
-      console.log(
-        `Event ${eventId} already processed during AI processing - skipping`
-      );
-      return;
-    }
-
     // Send response to Slack
     console.log(`Sending AI response to channel ${event.channel}`);
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Bearer ${botToken}`,
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
       },
       body: JSON.stringify({
         channel: event.channel,
@@ -242,14 +205,10 @@ async function processMessageWithAI(
     }
 
     // Mark event as processed only after successful response
-    await redis.sadd("processed_events", eventId);
-    console.log(`Successfully processed and responded to event ${eventId}`);
+    console.log(`Successfully processed and responded to event`);
   } catch (error) {
-    console.error(
-      `Error processing message with AI for event ${eventId}:`,
-      error
-    );
+    console.error(`Error processing message with AI for event:`, error);
   }
-}
+});
 
 export default app;
