@@ -1,17 +1,18 @@
+import { Client as QstashClient } from "@upstash/qstash";
 import { generateText } from "ai";
 import { Hono } from "hono";
-import { verifySlackRequest } from "./lib/verify-slack-request.js";
+
 import type {
   SlackAppMentionEvent,
   SlackMessageEvent,
   SlackUrlVerification,
   SlackWebhookPayload,
 } from "./lib/types.js";
-const app = new Hono();
-
-import { Client as QstashClient } from "@upstash/qstash";
+import { verifySlackRequest } from "./lib/verify-slack-request.js";
 
 const qstash = new QstashClient();
+
+const app = new Hono();
 
 // --- Hello World endpoint ---
 app.get("/", (c) => {
