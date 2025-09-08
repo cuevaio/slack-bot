@@ -11,6 +11,9 @@ app.get("/", (c) => {
 
 // --- Slack event endpoint ---
 app.post("/custom-bot/events", async (c) => {
+  console.log("Received event");
+  console.log(c.req.raw);
+
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   const botToken = process.env.SLACK_BOT_TOKEN;
 
