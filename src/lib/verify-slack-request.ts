@@ -1,5 +1,6 @@
 export async function verifySlackRequest(
   req: Request,
+  rawBody: string,
   signingSecret: string
 ): Promise<boolean> {
   const timestamp = req.headers.get("x-slack-request-timestamp");
@@ -11,8 +12,6 @@ export async function verifySlackRequest(
   const ts = parseInt(timestamp, 10);
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - ts) > FIVE_MINUTES) return false;
-
-  const rawBody = await req.clone().text();
   const baseString = `v0:${timestamp}:${rawBody}`;
 
   const encoder = new TextEncoder();

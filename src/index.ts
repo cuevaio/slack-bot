@@ -17,7 +17,9 @@ app.post("/custom-bot/events", async (c) => {
     return c.json({ error: "Missing env vars" }, 500);
   }
 
-  const body = await c.req.json<any>();
+  // Read the raw body first for signature verification
+  const rawBody = await c.req.text();
+  const body = JSON.parse(rawBody);
 
   // Handle Slack URL verification BEFORE signature verification
   // URL verification requests don't have proper signature headers
@@ -27,7 +29,7 @@ app.post("/custom-bot/events", async (c) => {
   }
 
   // Verify request signature for all other events
-  const valid = await verifySlackRequest(c.req.raw, signingSecret);
+  const valid = await verifySlackRequest(c.req.raw, rawBody, signingSecret);
   if (!valid) return c.json({ error: "Invalid signature" }, 401);
 
   // Handle incoming messages
