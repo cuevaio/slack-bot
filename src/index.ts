@@ -1,3 +1,4 @@
+import { generateText } from "ai";
 import { Hono } from "hono";
 import { verifySlackRequest } from "./lib/verify-slack-request.js";
 
@@ -35,7 +36,7 @@ app.post("/custom-bot/events", async (c) => {
   // Handle incoming messages
   if (body.type === "event_callback") {
     const event = body.event;
-    
+
     // Only process message events
     if (event.type === "message") {
       console.log("Message event received:", {
@@ -44,7 +45,7 @@ app.post("/custom-bot/events", async (c) => {
         channel: event.channel,
         channel_type: event.channel_type,
         text: event.text?.substring(0, 50) + "...", // Log first 50 chars
-        subtype: event.subtype
+        subtype: event.subtype,
       });
 
       // Filter out bot messages and non-DM messages
@@ -59,12 +60,18 @@ app.post("/custom-bot/events", async (c) => {
       }
 
       if (!isDM) {
-        console.log("Ignoring non-DM message, channel type:", event.channel_type);
+        console.log(
+          "Ignoring non-DM message, channel type:",
+          event.channel_type
+        );
         return c.json({ ok: true });
       }
 
       if (!hasText || !isRegularMessage) {
-        console.log("Ignoring message without text or with subtype:", event.subtype);
+        console.log(
+          "Ignoring message without text or with subtype:",
+          event.subtype
+        );
         return c.json({ ok: true });
       }
 
@@ -72,6 +79,13 @@ app.post("/custom-bot/events", async (c) => {
 
       // Reply with "OK, GOT IT" only to user DMs
       try {
+        const { text } = await generateText({
+          model: "openai/gpt-4.1-mini",
+          system:
+            "You are an arts teacher who writes the best possible poetry.",
+          prompt: `Write a poem about the following prompt: ${event.text}`,
+        });
+
         const response = await fetch("https://slack.com/api/chat.postMessage", {
           method: "POST",
           headers: {
@@ -80,7 +94,7 @@ app.post("/custom-bot/events", async (c) => {
           },
           body: JSON.stringify({
             channel: event.channel,
-            text: "OK, GOT IT",
+            text: text,
           }),
         });
 
