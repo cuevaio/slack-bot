@@ -1,16 +1,51 @@
-# Serverless Slack Bot Tutorial 🚀🤖
+# AI-Powered Slack Poetry Bot 🚀🤖
 
-**Learn to Build Slack Bots with Serverless Functions (No Framework Required)**
+**Production-Ready Slack Bot with Async Processing Architecture**
 
-This repository demonstrates how to build a production-ready Slack bot using **serverless functions** and **TypeScript** without relying on Slack's official `@slack/bolt` framework. Perfect for developers who want to understand the underlying mechanics of Slack bot development or prefer the flexibility of serverless architectures.
+This repository demonstrates how to build a production-ready AI-powered Slack bot using modern serverless technologies: **Hono**, **QStash**, and the **AI SDK**. The bot generates creative poetry in response to direct messages and channel mentions, while implementing a robust two-tier architecture to handle Slack's strict 3-second response requirements.
 
 ## 🎯 What You'll Learn
 
-- **Raw Slack API Integration**: Direct webhook handling and event processing
-- **Serverless Architecture**: Deploy to Vercel with automatic scaling and cost efficiency  
-- **TypeScript Best Practices**: Full type safety for Slack events and payloads
-- **Security Implementation**: Request signature verification and event deduplication
-- **AI Integration**: Connect with OpenAI for intelligent bot responses
+- **Async Processing Architecture**: Handle Slack's 3-second timeout using QStash for background processing
+- **Modern Web Framework**: Build fast APIs with Hono's lightweight, edge-optimized framework
+- **AI-Powered Responses**: Generate creative poetry using the AI SDK with OpenAI GPT-4 mini
+- **Production-Grade Event Handling**: Implement reliable webhook processing with retry logic
+- **TypeScript Best Practices**: Full type safety for Slack events and AI responses
+- **Security Implementation**: Slack request signature verification and secure API handling
+
+## 🚨 The Slack 3-Second Challenge
+
+Slack's Events API has a strict requirement: **your server must respond with HTTP 200 within 3 seconds** or the event will be considered failed. According to [Slack's documentation](https://docs.slack.dev/apis/events-api/#failure), failure conditions include:
+
+- **Response timeout**: Taking longer than 3 seconds to respond
+- **Invalid responses**: Any non-200 HTTP status code (except redirects)
+- **SSL issues**: Certificate validation failures
+- **Connection problems**: Server unreachability
+
+### The Retry Problem
+
+When your server fails to respond within 3 seconds, Slack implements an exponential backoff retry strategy:
+
+1. **Immediate retry** - Almost instant retry
+2. **1-minute retry** - Second attempt after 1 minute  
+3. **5-minute retry** - Final attempt after 5 minutes
+
+**Critical Impact**: If your app fails to respond successfully to more than 95% of events within 60 minutes, Slack will **temporarily disable your event subscriptions**.
+
+### Our QStash Solution
+
+This bot solves the timeout challenge using **QStash** (Upstash's message queue) to implement a **two-tier async processing architecture**:
+
+```
+📱 Slack Event → 🚀 Webhook (< 3s response) → 📬 QStash Queue → 🤖 AI Processing → 💬 Response
+```
+
+**Benefits of this approach:**
+- ✅ **Instant response**: Webhook responds to Slack in milliseconds
+- ✅ **Reliable processing**: QStash ensures messages are processed even if AI generation takes time
+- ✅ **Automatic retries**: QStash handles failed processing attempts
+- ✅ **Scalable**: Handle high event volumes without timeout issues
+- ✅ **Cost-effective**: Only pay for actual processing time
 
 ## ⚖️ Serverless vs @slack/bolt Framework
 
@@ -44,41 +79,90 @@ This repository demonstrates how to build a production-ready Slack bot using **s
 
 - **Direct Message Support**: Send the bot a private message with any prompt and receive a personalized poem
 - **Channel Mentions**: Mention the bot in any channel (`@botname your prompt`) to get a public poetry response
-- **AI-Powered**: Uses OpenAI GPT-4.1-mini to generate high-quality poetry
-- **Duplicate Prevention**: Redis-based event deduplication to prevent double responses
+- **Two-Tier Async Architecture**: Instant webhook responses + background AI processing via QStash
+- **AI-Powered Creativity**: Uses OpenAI GPT-4 mini via AI SDK to generate high-quality poetry
+- **Production-Grade Reliability**: Handles Slack's 3-second timeout with robust retry mechanisms
 - **Type Safety**: Full TypeScript implementation with comprehensive Slack event types
 - **Security**: Slack request signature verification for secure webhook handling
 
-## 🏗️ Architecture
+## 🏗️ Architecture & Tech Stack
 
+### Project Structure
 ```
 src/
-├── index.ts              # Main application logic and event handling
+├── index.ts              # Hono app with two-tier async processing
 ├── lib/
 │   ├── types.ts          # TypeScript types for Slack events
-│   ├── redis.ts          # Redis connection for event deduplication
 │   └── verify-slack-request.ts  # Slack signature verification
 ```
 
+### Technology Stack
+
+- **🌐 [Hono](https://hono.dev/)**: Ultra-fast web framework optimized for edge runtimes
+- **📬 [QStash](https://upstash.com/docs/qstash)**: Serverless message queue for async background processing  
+- **🤖 [AI SDK](https://sdk.vercel.ai/)**: Type-safe AI integration for OpenAI GPT-4 mini
+- **⚡ [Vercel](https://vercel.com/)**: Serverless deployment platform with automatic scaling
+- **🔒 TypeScript**: Full type safety for Slack events and AI responses
+
+### Two-Tier Processing Flow
+
+```mermaid
+graph LR
+    A[Slack Event] --> B[Hono Webhook]
+    B --> C{Event Valid?}
+    C -->|Yes| D[QStash Publish]
+    C -->|No| E[Return 200 OK]
+    D --> E
+    E --> F[< 3 Second Response]
+    
+    D --> G[QStash Queue]
+    G --> H[Background Processor]
+    H --> I[AI SDK + OpenAI]
+    I --> J[Generated Poetry]
+    J --> K[Slack API Response]
+```
+
+**Tier 1 - Instant Webhook Response** (`/custom-bot/events`):
+1. Receives Slack events via Hono framework
+2. Validates request signatures and event types
+3. Publishes valid events to QStash queue
+4. Returns HTTP 200 to Slack (< 3 seconds guaranteed)
+
+**Tier 2 - Async AI Processing** (`/api/process-message`):
+1. QStash triggers background processing endpoint
+2. AI SDK generates poetry using OpenAI GPT-4 mini
+3. Posts generated response back to original Slack channel
+4. Handles longer processing times without timeout issues
+
 ## 🚀 Event Handling
 
-The bot intelligently handles different types of Slack events:
+The bot uses intelligent event filtering and async processing:
 
 ### IM Messages (Direct Messages)
 - **Trigger**: User sends a direct message to the bot
-- **Processing**: Filters out bot messages and system messages
-- **Response**: Generates poetry based on the message content
+- **Instant Response**: Webhook validates and queues event via QStash (< 3s)
+- **Async Processing**: Background worker generates poetry using AI SDK
+- **Final Response**: Bot posts generated poem back to the user
 
 ### App Mentions (Channel Messages)  
-- **Trigger**: User mentions the bot in a channel (`@botname prompt`)
-- **Processing**: Strips the bot mention and processes the remaining text
-- **Response**: Posts the generated poem as a reply in the channel
+- **Trigger**: User mentions the bot in a channel (`@botname write about sunsets`)
+- **Instant Response**: Webhook strips bot mention and queues clean text via QStash
+- **Async Processing**: AI generates poetry based on the clean prompt
+- **Final Response**: Bot posts poem as public reply in the channel
 
-### Filtered Events
-- Bot messages (ignored to prevent loops)
-- System messages with subtypes (ignored)
-- Empty or whitespace-only messages (ignored)
-- Non-event_callback events (rejected early)
+### Intelligent Event Filtering
+The webhook tier filters events before queuing:
+- ✅ **Valid events**: Direct messages and app mentions with content
+- ❌ **Bot messages**: Ignored to prevent infinite loops
+- ❌ **System messages**: Messages with subtypes are filtered out
+- ❌ **Empty content**: Messages without text content are ignored
+- ❌ **Invalid events**: Non-event_callback types rejected early
+
+### Async Processing Benefits
+- **No timeouts**: AI generation can take 10+ seconds without affecting Slack
+- **Reliable delivery**: QStash ensures messages are processed even if temporary failures occur
+- **Automatic retries**: Failed AI generations are automatically retried by QStash
+- **Scalable**: Handle multiple conversations simultaneously without blocking
 
 ## 🔧 Why Build Without @slack/bolt?
 
@@ -101,8 +185,8 @@ This tutorial takes the **"learn by building"** approach by implementing Slack b
 
 ### Prerequisites
 
-- [Vercel CLI](https://vercel.com/docs/cli) installed globally
-- Redis instance (for event deduplication)
+- [Vercel CLI](https://vercel.com/docs/cli) installed globally  
+- [QStash account](https://console.upstash.com/) for async message processing
 - Slack app with appropriate permissions
 
 ### Environment Variables
@@ -113,8 +197,14 @@ Create a `.env.local` file with the following variables:
 SLACK_SIGNING_SECRET=your_slack_signing_secret
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 OPENAI_API_KEY=your_openai_api_key
-REDIS_URL=your_redis_connection_string
+QSTASH_TOKEN=your_qstash_token
+BASE_URL=https://your-domain.vercel.app
 ```
+
+**Getting QStash credentials:**
+1. Sign up at [Upstash Console](https://console.upstash.com/)
+2. Create a new QStash database
+3. Copy the `QSTASH_TOKEN` from your dashboard
 
 ### Slack App Configuration
 
@@ -165,46 +255,65 @@ npm install
 vc deploy
 ```
 
-## 🔍 Monitoring
+## 🔍 Monitoring & Observability
 
-The bot provides comprehensive logging:
+The bot provides comprehensive logging across both processing tiers:
 
+**Webhook Tier Logging:**
 - **Event Reception**: Logs all incoming Slack events with sanitized content
 - **Event Filtering**: Clear messages about why events are ignored or processed
-- **AI Processing**: Logs when AI generation starts and completes
-- **Slack API**: Logs success/failure of message posting to Slack
-- **Duplicates**: Alerts when duplicate events are detected and prevented
+- **QStash Publishing**: Confirms successful queuing of events for background processing
+- **Response Times**: Tracks webhook response times to ensure < 3 second compliance
 
-## 🛡️ Security Features
+**Background Processing Tier:**
+- **AI Generation**: Logs when AI poetry generation starts and completes
+- **Slack API Responses**: Logs success/failure of message posting to Slack
+- **Error Handling**: Detailed error logging for troubleshooting failed processing
+- **Queue Processing**: QStash automatically provides retry and failure metrics
 
-- **Signature Verification**: All requests verified against Slack's signing secret
-- **Event Deduplication**: Redis-based prevention of duplicate event processing  
-- **Type Safety**: Comprehensive TypeScript types prevent runtime errors
+## 🛡️ Security & Reliability Features
+
+- **Signature Verification**: All webhook requests verified against Slack's signing secret
+- **Async Reliability**: QStash ensures message processing even during temporary failures
+- **Type Safety**: Comprehensive TypeScript types prevent runtime errors  
 - **Input Validation**: Proper filtering of bot messages and invalid content
+- **Automatic Retries**: QStash handles failed AI processing attempts automatically
+- **Rate Limiting Protection**: Background processing prevents webhook timeout issues
 
 ## 🤖 AI Configuration
 
-The bot uses OpenAI's GPT-4.1-mini with this system prompt:
-> "You are an arts teacher who writes the best possible poetry."
+The bot uses **OpenAI GPT-4 mini** via the **AI SDK** with this configuration:
 
-Poems are generated based on user prompts, creating personalized creative content for each request.
+```typescript
+const { text } = await generateText({
+  model: "openai/gpt-4.1-mini", // Cost-effective model optimized for creative tasks
+  system: "You are an arts teacher who writes the best possible poetry.",
+  prompt: `Write a poem about the following prompt: ${userMessage}`,
+});
+```
+
+**Why GPT-4 mini?**
+- **Cost-effective**: Significantly cheaper than full GPT-4 for creative tasks
+- **Fast generation**: Quick response times perfect for async processing
+- **Creative quality**: Excellent for poetry and creative writing tasks
 
 ## 📚 Learning Resources
 
 ### Next Steps After This Tutorial:
 1. **Extend Functionality**: Add slash commands, interactive components, or file uploads
-2. **Advanced Patterns**: Implement conversation state, user preferences, or team management
-3. **Performance Optimization**: Add caching layers, optimize cold starts, or implement batching
+2. **Advanced QStash Patterns**: Implement delayed jobs, scheduled poetry, or batch processing
+3. **AI Enhancements**: Add conversation memory, style preferences, or multi-modal inputs
 4. **Production Hardening**: Add comprehensive error handling, monitoring, and alerting
 
-### Related Documentation:
-- [Slack Events API](https://api.slack.com/events-api) - Official event types and payloads
-- [Slack Web API](https://api.slack.com/web) - Available endpoints for bot responses  
-- [Vercel Functions](https://vercel.com/docs/functions) - Serverless deployment platform
-- [Redis Patterns](https://redis.io/docs/manual/patterns/) - Data structures for state management
+### Key Documentation:
+- **[Slack Events API](https://docs.slack.dev/apis/events-api/#failure)** - Critical timeout and retry behavior
+- **[QStash Documentation](https://upstash.com/docs/qstash)** - Async message processing patterns
+- **[AI SDK Guide](https://sdk.vercel.ai/)** - Type-safe AI integration patterns
+- **[Hono Documentation](https://hono.dev/)** - Ultra-fast web framework for edge runtimes
+- **[Vercel Functions](https://vercel.com/docs/functions)** - Serverless deployment and scaling
 
-### Alternative Implementations:
-- **AWS Lambda**: Adapt this code for Lambda deployment with API Gateway
-- **Cloudflare Workers**: Minimal changes needed for edge computing deployment
-- **Firebase Functions**: Google Cloud alternative with similar patterns
-- **Railway/Fly.io**: Traditional hosting with persistent connections
+### Alternative Deployment Options:
+- **Cloudflare Workers**: Deploy the same Hono app to Cloudflare's edge network
+- **AWS Lambda**: Adapt for Lambda with API Gateway (may need timeout adjustments)
+- **Railway/Fly.io**: Traditional hosting with persistent QStash connections
+- **Deno Deploy**: Edge deployment with native TypeScript support
