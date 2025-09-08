@@ -1,6 +1,9 @@
+import { Redis } from "@upstash/redis";
 import { generateText } from "ai";
 import { Hono } from "hono";
 import { verifySlackRequest } from "./lib/verify-slack-request.js";
+
+const redis = Redis.fromEnv();
 
 const app = new Hono();
 
@@ -17,6 +20,18 @@ app.post("/custom-bot/events", async (c) => {
   const json = await c.req.json();
   console.log("Received body");
   console.log(json);
+
+  const eventId = json.event_id;
+
+  const eventAlreadyProcessed = await redis.sismember(
+    "processed_events",
+    eventId
+  );
+
+  if (eventAlreadyProcessed) {
+    console.log("Event already processed");
+    return c.json({ ok: true });
+  }
 
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   const botToken = process.env.SLACK_BOT_TOKEN;
@@ -109,6 +124,8 @@ app.post("/custom-bot/events", async (c) => {
         if (!result.ok) {
           console.error("Failed to send message:", result.error);
         }
+
+        await redis.sadd("processed_events", eventId);
       } catch (error) {
         console.error("Error sending message:", error);
       }
