@@ -108,6 +108,16 @@ app.post("/custom-bot/events", async (c) => {
           prompt: `Write a poem about the following prompt: ${event.text}`,
         });
 
+        const eventAlreadyProcessed = await redis.sismember(
+          "processed_events",
+          eventId
+        );
+
+        if (eventAlreadyProcessed) {
+          console.log("Event already processed");
+          return c.json({ ok: true });
+        }
+
         const response = await fetch("https://slack.com/api/chat.postMessage", {
           method: "POST",
           headers: {
