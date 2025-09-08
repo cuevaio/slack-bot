@@ -14,6 +14,10 @@ app.post("/custom-bot/events", async (c) => {
   console.log("Received event");
   console.log(c.req.raw);
 
+  const json = await c.req.json();
+  console.log("Received body");
+  console.log(json);
+
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   const botToken = process.env.SLACK_BOT_TOKEN;
 
